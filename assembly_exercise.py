@@ -1,6 +1,17 @@
 # =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 # Old functions from previous exercise
 # =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+def degrees(graph):
+    """
+    Calculating the degree of every vertex in a undirected graph.
+    Number of connection vertex has.
+    :param graph:
+    :return:
+    """
+
+    # Dict comprehension to map each vertex to the length of its neighbour
+    return {vertex: len(neighbour  s) for vertex, neighbours in graph.items()}
+
 
 def in_out_degree(graph):
     """
@@ -244,6 +255,93 @@ def spell_path(nodes):
     return spelled
 
 
+    # =-=-=-=-=-=-=-=-=-=-=-= Task 3 =-=-=-=-=-=-=-=-=-=-=-=
+
+def hierholzer(graph, start, verbose=False):
+    """
+    Finds an Eulerian path using Hierholzer's algorithm.
+    :param graph:
+    :param start:
+    :param verbose:
+    :return:
+    """
+    # Creating a copy of the graph to keep track of unused edges
+    # without modifying the original!
+    # Sorting the lists alphabetically (ascending) ensuring that pop(0)
+    # always gives the alphabetically first available node.
+
+    unused_edges = {u: sorted(v_list) for u, v_list in graph.items()}
+
+    # Helper walk routine
+    def walk_from(node):
+        new_walk = [node]
+        curr = node
+        # Keeping walk until the current node has no unused outgoing edges
+        while unused_edges.get(curr):
+            next_node = unused_edges[curr].pop(0)
+            new_walk.append(next_node)
+            curr = next_node
+        return new_walk
+
+    # Initial walk from the start node
+    walk = walk_from(start)
+
+    if verbose:
+        print(f"Walk 1 (from the start node): {walk}")
+
+    # Looping until every edge is used
+    # any() checks if there are still edges left in any of the lists
+    while any(unused_edges.values()):
+        # Finding the first node in the curr walk that still has unused edges
+        restart_index = -1
+        restart_node = ""
+
+        for i, node in enumerate(walk):
+            if unused_edges.get(node):
+                restart_index = i
+                restart_node = node
+                break
+
+        # Performing a new walk starting from this node.
+        new_path = walk_from(restart_node)
+
+        if verbose:
+            print(f"Restart at: {restart_node} walk: {new_path}")
+
+        # Splicing the new walk into the old walk
+        # Replacing single instance of the restart node with the entire new_path
+        walk = walk[:restart_index] + new_path + walk[restart_index + 1:]
+
+        if verbose:
+            print(f"Walk after splicing: {walk}")
+
+    return walk
+
+def eulerian_path(graph, verbose=False):
+    """
+    Determines the correct starting node, then runs Hierholzer's algorithm.
+    :param graph:
+    :param verbose:
+    :return:
+    """
+
+    in_deg, out_deg = in_out_degree(graph)
+
+    start_node = None
+
+    # Checking for a node with out_deg - in_deg == 1 (start of path)
+    for v in graph:
+        if out_deg.get(v,0) - in_deg.get(v, 0) == 1:
+            start_node = v
+            break
+    # If all nodes are balanced, its an eulerian circuit.
+    # the rule says to start at the alphabetically first node.
+
+    if start_node is None:
+        start_node = min(graph.keys())
+
+    return hierholzer(graph, start_node, verbose=verbose)
+
 
 # # =-=-=-=-=-=-=-=-=-= Main =-=-=-=-=-=-=-=-=-=-=-=-=-=
 if __name__ == "__main__":
@@ -262,4 +360,31 @@ if __name__ == "__main__":
     # Testing spell path
     nodes_walk = [kmers[0][:-1]] + [kmer[1:] for kmer in kmers]
     print(f"\nSpelled path: {spell_path(nodes_walk)}")
+
+    print("=-=-=-=-=-=-=-=-=-= Task 3 =-=-=-=-=-=-=-=-=-=-=-=-=-= ")
+    from collections import Counter
+
+    toy_b_kmers = ["ACT", "AGC", "ATT", "CCG", "CGA", "CGT", "CTG", "GAC",
+                   "GAG", "GAT", "GTC", "TCC", "TCG", "TGA", "TTC"]
+
+    graph_b = debruijn_graph(toy_b_kmers)
+
+    # running the pathfinding with verbose to compare with the hand trace
+    path = eulerian_path(graph_b, verbose=True)
+
+    print("\nFinal spelled genome:")
+    genome = spell_path(path)
+    print(genome)
+
+    # Self-checks
+    edges_count = sum(len(v) for v in graph_b.values())
+    print("\n Self Checks")
+    print(f"1. Path nodes == edges + 1? {len(path) == edges_count + 1}")
+
+    path_edges = list(zip(path, path[1:]))
+    graph_edges = [(u,v) for u,v_list in graph_b.items() for v in v_list]
+    print(f"2. Every edge used exactly once? {Counter(path_edges) == Counter(graph_edges)}")
+
+    spelled_kmers = kmer_composition(genome, 3)
+    print(f"3. Spelled kmers match original k-mers ? {Counter(spelled_kmers) == Counter(toy_b_kmers)}")
 
