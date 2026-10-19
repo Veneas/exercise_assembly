@@ -10,7 +10,7 @@ def degrees(graph):
     """
 
     # Dict comprehension to map each vertex to the length of its neighbour
-    return {vertex: len(neighbour  s) for vertex, neighbours in graph.items()}
+    return {vertex: len(neighbours) for vertex, neighbours in graph.items()}
 
 
 def in_out_degree(graph):
@@ -38,29 +38,27 @@ def in_out_degree(graph):
 # =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 def dfs(graph, start):
     """
-    A depth-first search starting from a given vertex.
-    Return a list of vertices in the exact order they were first visited.
-    :param graph:
-    :param start:
-    :return:
+    Depth-First Search rewritten to use a loop and an explicit stack
+    to avoid recursion depth limits on massive genomes.
     """
+    visited = set()
+    order = []
+    stack = [start]
 
-    visited = set()     # Lookup to check if the vertex was seen
-    order = []          # Keeping track of the exact visitation seq
+    while stack:
+        vertex = stack.pop()
 
-    # Defining recursive helper func to do the walking
-    def explore(vertex):
-        visited.add(vertex)
-        order.append(vertex)
+        if vertex not in visited:
+            visited.add(vertex)
+            order.append(vertex)
 
-        # Tie-break rule: sorting neighbours alphabetically
-        for neighbour in sorted(graph[vertex]):
-            # Only visiting if havent been there yet
-            if neighbour not in visited:
-                explore(neighbour)
-
-    # Kicking off the recursion from the start vertex
-    explore(start)
+            # We sort in REVERSE alphabetical order before adding to the stack,
+            # so the alphabetically FIRST neighbor is at the top of the stack
+            # and gets popped/visited next.
+            # graph.get(vertex, []) prevents KeyErrors if a node has no outgoing edges
+            for neighbour in sorted(graph.get(vertex, []), reverse=True):
+                if neighbour not in visited:
+                    stack.append(neighbour)
 
     return order
 
@@ -119,7 +117,7 @@ def is_weakly_connected(graph):
     # its weakly connected if all vertices from exactly one large group
     return len(components) == 1
 
-# =-=-=-=-=-=-=-=-=-=-=-= Task 4 =-=-=-=-=-=-=-=-=-=-=-=
+# =-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=-=-=
 
 def eulerian_type(graph, directed=False):
     """
@@ -343,6 +341,85 @@ def eulerian_path(graph, verbose=False):
     return hierholzer(graph, start_node, verbose=verbose)
 
 
+    # =-=-=-=-=-=-=-=-=-=-=-= Task 4 =-=-=-=-=-=-=-=-=-=-=-=
+
+
+def contigs(graph):
+    """
+    Finds all maximal non-branching paths (contigs) in a de Bruijn graph.
+    Returns a sorted list of the strings they spell.
+    :param graph:
+    """
+    in_deg, out_deg = in_out_degree(graph)
+
+    # Identifying all nodes that are NOT 1-in-1-out
+    # These are branching nodes (starts and ends of contigs)
+    non_1_in_1_out = set()
+    for node in graph:
+        if in_deg.get(node, 0) != 1 or out_deg.get(node, 0) != 1:
+            non_1_in_1_out.add(node)
+
+    # Keep track of unused edges to ensure every edge is used exactly once
+    unused_edges = {u: list(v_list) for u, v_list in graph.items()}
+    result_contigs = []
+
+    # Extracting all paths that start from a branching node
+    for start_node in non_1_in_1_out:
+        # As long as this branching node has outgoing edges...
+        while unused_edges.get(start_node):
+            path = [start_node]
+            curr = start_node
+
+            # Take the first step along an unused edge
+            next_node = unused_edges[curr].pop(0)
+            path.append(next_node)
+            curr = next_node
+
+            # Keep walking forward as long as the node it lands on IS 1-in-1-out
+            while curr not in non_1_in_1_out:
+                next_node = unused_edges[curr].pop(0)
+                path.append(next_node)
+                curr = next_node
+
+            # Hitting a branching node, so the contig ends here.
+            result_contigs.append(spell_path(path))
+
+    # Handling any isolated cycles left over
+    # If the graph has isolated loops of only 1-in-1-out nodes, they
+    # wouldn't be caught by step 2 because they have no branching nodes.
+    for start_node in graph:
+        while unused_edges.get(start_node):
+            path = [start_node]
+            curr = start_node
+
+            # Walk the cycle until it returns to the start_node
+            next_node = unused_edges[curr].pop(0)
+            path.append(next_node)
+            curr = next_node
+
+            while curr != start_node:
+                next_node = unused_edges[curr].pop(0)
+                path.append(next_node)
+                curr = next_node
+
+            # The instructions require the cycle to start/end at the
+            # alphabetically first node in the cycle.
+            cycle_nodes = path[:-1]  # Remove the repeated end node for a moment
+            first_node = min(cycle_nodes)
+            idx = cycle_nodes.index(first_node)
+
+            # Rotate the list so it starts and ends at the alphabetically first node
+            rotated_path = cycle_nodes[idx:] + cycle_nodes[:idx] + [first_node]
+            result_contigs.append(spell_path(rotated_path))
+
+    # The instructions require returning the contigs sorted alphabetically
+    return sorted(result_contigs)
+
+
+    # =-=-=-=-=-=-=-=-=-=-=-= Task 5 =-=-=-=-=-=-=-=-=-=-=-=
+
+
+
 # # =-=-=-=-=-=-=-=-=-= Main =-=-=-=-=-=-=-=-=-=-=-=-=-=
 if __name__ == "__main__":
     print("=-=-=-=-=-=-=-=-=-= Task 2 =-=-=-=-=-=-=-=-=-=-=-=-=-= ")
@@ -388,3 +465,138 @@ if __name__ == "__main__":
     spelled_kmers = kmer_composition(genome, 3)
     print(f"3. Spelled kmers match original k-mers ? {Counter(spelled_kmers) == Counter(toy_b_kmers)}")
 
+
+    print("\n=-=-=-=-=-=-=-=-=-= Task 4 =-=-=-=-=-=-=-=-=-=-=-=-=-= ")
+    toy_c_kmers = [
+        "ATC", "CCT", "CTT", "GGT", "GTA", "GTG",
+        "TAT", "TCT", "TGG", "TGT", "TTG"
+    ]
+
+    graph_c = debruijn_graph(toy_c_kmers)
+    c_contigs = contigs(graph_c)
+
+    print("Contigs found in Toy C:")
+    for c in c_contigs:
+        print(" -", c)
+
+    print("\nMatches handwritten expectation?")
+    expected = sorted(["CCT", "CTTG", "TGGT", "TGT", "GTG", "GTATCT"])
+    print(c_contigs == expected)
+
+
+    print("\n=-=-=-=-=-=-=-=-=-= Task 5 =-=-=-=-=-=-=-=-=-=-=-=-=-= ")
+    from Bio import SeqIO
+    import os
+
+    # Reading the reads from the FASTA file
+    try:
+        reads = [str(record.seq) for record in SeqIO.parse("reads.fasta", "fasta")]
+        print(f"Successfully loaded {len(reads)} reads.")
+    except FileNotFoundError:
+        print("Could not find 'reads.fasta'. Please ensure it is in the same directory.")
+        exit()
+
+    k_values = [9, 12, 13, 14, 21]
+
+    # Storing the trimmed spelled strings to compare circularity later
+    trimmed_genomes = {}
+    contigs_dict = {}
+    # Printing a header for our output table
+    print(
+        f"\n{'k':<4} | {'|V|':<6} | "
+        f"{'|E|':<6} | {'Eulerian Type':<15} | "
+        f"{'Contigs':<8} | {'Max Contig (Trimmed)':<20} | "
+        f"{'Spelled String (Trimmed)'}")
+
+    # Processing each k
+    for k in k_values:
+        # Collecting distinct k-mers using a set
+        distinct_kmers_set = set()
+        for read in reads:
+            # kmer_composition from Task 2
+            distinct_kmers_set.update(kmer_composition(read, k))
+
+        # Passing sorted distinct k-mers to the graph builder
+        sorted_kmers = sorted(list(distinct_kmers_set))
+        graph = debruijn_graph(sorted_kmers)
+
+        # Calculating |V| and |E|
+        V = len(graph)
+        E = sum(len(edges) for edges in graph.values())
+
+        # Eulerian type
+        e_type = eulerian_type(graph, directed=True)
+
+        # Contigs
+        raw_contigs = contigs(graph)
+        num_contigs = len(raw_contigs)
+
+        # Trim cycles for contigs
+            # If a contig repeats its first k-1 letters at the end, it's a cycle -> Cut them off.
+        trimmed_contigs = []
+        for c in raw_contigs:
+            if c[:k - 1] == c[-(k - 1):]:
+                trimmed_contigs.append(c[:-(k - 1)])
+            else:
+                trimmed_contigs.append(c)
+
+        contigs_dict[k] = trimmed_contigs
+        longest_contig_len = max((len(c) for c in trimmed_contigs), default=0)
+
+        # Finding Eulerian path if it exists
+        spelled_len_str = "—"
+        if e_type != "none":
+            path = eulerian_path(graph)
+            spelled = spell_path(path)
+
+            # Trimming the cycle off the spelled genome
+            if spelled[:k - 1] == spelled[-(k - 1):]:
+                trimmed_spelled = spelled[:-(k - 1)]
+            else:
+                trimmed_spelled = spelled
+
+            spelled_len_str = str(len(trimmed_spelled))
+            trimmed_genomes[k] = trimmed_spelled
+
+        # Printing the row for the table
+        print(
+            f"{k:<4} | {V:<6} | {E:<6} | "
+            f"{e_type:<15} | {num_contigs:<8} | "
+            f"{longest_contig_len:<20} | {spelled_len_str}")
+
+    # Comparing the trimmed spelled strings (check for circularity)
+    print("Checking if spelled strings describe the same circle...")
+    # Getting all the generated genomes (should be for k=13, 14, 21)
+    genomes_list = list(trimmed_genomes.values())
+
+    if len(genomes_list) > 1:
+        all_match = True
+        base_genome = genomes_list[0]
+        for other_genome in genomes_list[1:]:
+            # Two strings describe the same circle if they have the same length
+            # and one is a substring of the other concatenated with itself.
+            if len(base_genome) != len(other_genome) or base_genome not in (other_genome + other_genome):
+                all_match = False
+                break
+        print(f"Do all spelled strings describe the same circle? {all_match}")
+    else:
+        print("Not enough spelled strings to compare.")
+
+    # Preparing sequences for BLAST
+    print("\nSequences for BLAST")
+
+    target_k = None
+    for k in k_values:
+        if len(contigs_dict[k]) == 1:
+            target_k = k
+            break
+
+    if target_k is not None:
+        print(f"\n(a) For k={target_k} (Smallest k with exactly 1 contig), here is the single trimmed contig to BLAST:")
+        print(contigs_dict[target_k][0])
+
+    print("\n(b) Trimmed spelled string of every smaller k at which you got one:")
+    for k in k_values:
+        if target_k and k < target_k and k in trimmed_genomes:
+            print(f"\nSpelled string for k={k}:")
+            print(trimmed_genomes[k])
